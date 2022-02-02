@@ -49,9 +49,9 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  std_srvs
   pcl_ros
   tf
-  livox_ros_driver
   message_generation
   eigen_conversions
 )
