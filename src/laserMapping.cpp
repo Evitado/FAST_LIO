@@ -556,10 +556,11 @@ void set_posestamp(T & out)
 }
 
 tf::TransformListener *listener;
+std::string base_link;
 void publish_odometry(const ros::Publisher & pubOdomAftMapped)
 {
     odomAftMapped.header.frame_id = "camera_init";
-    odomAftMapped.child_frame_id = "base_footprint_tug";
+    odomAftMapped.child_frame_id = base_link;
 //    odomAftMapped.child_frame_id = "body";
     odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time);// ros::Time().fromSec(lidar_end_time);
     set_posestamp(odomAftMapped.pose);
@@ -591,11 +592,11 @@ void publish_odometry(const ros::Publisher & pubOdomAftMapped)
     tf::StampedTransform sensor2tug;
     //br.sendTransform( tf::StampedTransform( transform, odomAftMapped.header.stamp, "camera_init", "body" ) );
     try{
-      listener->waitForTransform("main_sensor_lidar", "base_footprint_tug", ros::Time(0), ros::Duration(3.0));
-      listener->lookupTransform("main_sensor_lidar", "base_footprint_tug", ros::Time(0), sensor2tug);
+      listener->waitForTransform("main_sensor_lidar", base_link, ros::Time(0), ros::Duration(3.0));
+      listener->lookupTransform("main_sensor_lidar", base_link, ros::Time(0), sensor2tug);
 
       tf::Transform odom2tug = transform * sensor2tug;
-      br.sendTransform( tf::StampedTransform( odom2tug, ros::Time().fromSec(lidar_end_time), "camera_init", "base_footprint_tug" ));
+      br.sendTransform( tf::StampedTransform( odom2tug, ros::Time().fromSec(lidar_end_time), "camera_init", base_link ));
       //ROS_INFO("Time delta: %.4fs", (ros::Time::now() - ros::Time().fromSec(lidar_end_time)).toSec());
     }
     catch (tf::TransformException ex){
@@ -758,6 +759,8 @@ int main(int argc, char** argv)
     tf::TransformListener tf_listener;
     listener = &tf_listener;
 
+    pn.param<std::string>("base_link",base_link, "base_footprint_tug");
+    ROS_INFO("Using %s as base_link", base_link.c_str());
     nh.param<bool>("publish/path_en",path_en, true);
     nh.param<bool>("publish/scan_publish_en",scan_pub_en, true);
     nh.param<bool>("publish/dense_publish_en",dense_pub_en, true);
