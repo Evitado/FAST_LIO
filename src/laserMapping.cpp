@@ -44,6 +44,7 @@
 #include <ros/ros.h>
 #include <Eigen/Core>
 #include "IMU_Processing.hpp"
+#include <std_msgs/Float64.h>
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <std_srvs/Empty.h>
@@ -103,6 +104,7 @@ vector<PointVector>  Nearest_Points;
 vector<double>       extrinT(3, 0.0);
 vector<double>       extrinR(9, 0.0);
 deque<double>                     time_buffer;
+deque<ros::Time>                  stamp_buffer;
 deque<PointCloudXYZI::Ptr>        lidar_buffer;
 deque<sensor_msgs::Imu::ConstPtr> imu_buffer;
 
@@ -302,6 +304,7 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
     p_pre->process(msg, ptr);
     lidar_buffer.push_back(ptr);
     time_buffer.push_back(msg->header.stamp.toSec());
+    stamp_buffer.push_back(msg->header.stamp);
     last_timestamp_lidar = msg->header.stamp.toSec();
     s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
     mtx_buffer.unlock();
@@ -357,6 +360,7 @@ bool sync_packages(MeasureGroup &meas)
     {
         meas.lidar = lidar_buffer.front();
         meas.lidar_beg_time = time_buffer.front();
+        meas.stamp = stamp_buffer.front();
         if (meas.lidar->points.size() <= 1) // time too little
         {
             lidar_end_time = meas.lidar_beg_time + lidar_mean_scantime;
@@ -396,6 +400,7 @@ bool sync_packages(MeasureGroup &meas)
 
     lidar_buffer.pop_front();
     time_buffer.pop_front();
+    stamp_buffer.pop_front();
     lidar_pushed = false;
     return true;
 }
@@ -563,8 +568,6 @@ void set_posestamp(T & out)
     out.pose.orientation.w = geoQuat.w;
 }
 
-tf::TransformListener *listener;
-std::string base_link;
 void publish_odometry(const ros::Publisher & pubOdomAftMapped)
 {
     odomAftMapped.header.frame_id = global_frame;
@@ -771,8 +774,9 @@ int main(int argc, char** argv)
     pn.param<std::string>("global_frame", global_frame,    "world");
     ROS_INFO("Using %s as base_link", base_link_frame.c_str());
 
-    pn.param<std::string>("base_link",base_link, "base_footprint_tug");
-    ROS_INFO("Using %s as base_link", base_link.c_str());
+    bool publish_timing, publish_delay;
+    nh.param("/debug_timing", publish_timing, false);
+    nh.param("/debug_delay", publish_delay, false);
     nh.param<bool>("publish/path_en",path_en, true);
     nh.param<bool>("publish/scan_publish_en",scan_pub_en, true);
     nh.param<bool>("publish/dense_publish_en",dense_pub_en, true);
@@ -855,8 +859,8 @@ int main(int argc, char** argv)
         cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
 
     /*** ROS subscribe initialization ***/
-    ros::Subscriber sub_pcl = nh.subscribe(lid_topic, 10, standard_pcl_cbk);
-    ros::Subscriber sub_imu = nh.subscribe(imu_topic, 10, imu_cbk);
+    ros::Subscriber sub_pcl = nh.subscribe(lid_topic, 1, standard_pcl_cbk);
+    ros::Subscriber sub_imu = nh.subscribe(imu_topic, 1, imu_cbk);
     ros::Publisher pubLaserCloudFull = nh.advertise<sensor_msgs::PointCloud2>
             ("cloud_registered", 100);
     ros::Publisher pubLaserCloudFull_body = nh.advertise<sensor_msgs::PointCloud2>
@@ -869,6 +873,9 @@ int main(int argc, char** argv)
             ("Odometry", 100);
     ros::Publisher pubPath          = nh.advertise<nav_msgs::Path>
             ("path", 100);
+    ros::Publisher timing_pub       = nh.advertise<std_msgs::Float64>("/debug/lio_timing", 1);
+    ros::Publisher delay_pub        = nh.advertise<std_msgs::Float64>("/debug/lio_delay", 1);
+
     ros::ServiceServer start_lio_service_ = pn.advertiseService("start_lidar_odom", startLIO);
     ros::ServiceServer stop_lio_service_ = pn.advertiseService("stop_lidar_odom", stopLIO);
 //------------------------------------------------------------------------------------------------------
@@ -880,7 +887,9 @@ int main(int argc, char** argv)
         if (flg_exit) break;
         ros::spinOnce();
         if (!lidar_odom_) {rate.sleep(); continue;};
-        if(sync_packages(Measures)) 
+
+        auto t1_ = std::chrono::high_resolution_clock::now();
+        if(sync_packages(Measures))
         {
             if (flg_first_scan)
             {
@@ -989,7 +998,24 @@ int main(int argc, char** argv)
             t3 = omp_get_wtime();
             map_incremental();
             t5 = omp_get_wtime();
-            
+
+            auto t2_ = std::chrono::high_resolution_clock::now();
+            double dt = std::chrono::duration_cast<std::chrono::microseconds>(t2_-t1_).count() / 1000.0;
+            if (publish_timing)
+            {
+              std_msgs::Float64 m;
+              m.data = dt;
+              timing_pub.publish(m);
+            }
+
+            if (publish_delay)
+            {
+              ros::Duration dt = ros::Time::now() - Measures.stamp;
+              std_msgs::Float64 m;
+              m.data = dt.toNSec() / 1000000.0;
+              delay_pub.publish(m);
+            }
+
             /******* Publish points *******/
             if (path_en)                         publish_path(pubPath);
             if (scan_pub_en || pcd_save_en)      publish_frame_world(pubLaserCloudFull);
