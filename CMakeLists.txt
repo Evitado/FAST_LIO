@@ -44,6 +44,7 @@ find_path(MATPLOTLIB_CPP_INCLUDE_DIRS "matplotlibcpp.h")
 
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
+  evitado_msgs
   nav_msgs
   sensor_msgs
   roscpp
