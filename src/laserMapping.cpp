@@ -64,6 +64,8 @@
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree.h>
 
+#include <easy/profiler.h>
+
 #define INIT_TIME           (0.1)
 #define LASER_POINT_COV     (0.001)
 #define MAXN                (720000)
@@ -246,6 +248,7 @@ BoxPointType LocalMap_Points;
 bool Localmap_Initialized = false;
 void lasermap_fov_segment()
 {
+    EASY_FUNCTION(profiler::colors::Blue);
     cub_needrm.clear();
     kdtree_delete_counter = 0;
     kdtree_delete_time = 0.0;
@@ -358,6 +361,7 @@ double lidar_mean_scantime = 0.0;
 int    scan_num = 0;
 bool sync_packages(MeasureGroup &meas)
 {
+    EASY_FUNCTION(profiler::colors::Magenta);
     if (lidar_buffer.empty() || imu_buffer.empty()) {
       return false;
     }
@@ -415,6 +419,7 @@ bool sync_packages(MeasureGroup &meas)
 int process_increments = 0;
 void map_incremental()
 {
+    EASY_FUNCTION();
     PointVector PointToAdd;
     PointVector PointNoNeedDownsample;
     PointToAdd.reserve(feats_down_size);
@@ -792,6 +797,14 @@ int main(int argc, char** argv)
     pn.param<std::string>("global_frame", global_frame,    "world");
     ROS_INFO("Using %s as base_link", base_link_frame.c_str());
 
+    bool enable_profiler;
+    nh.param("enable_profiler", enable_profiler, false);
+    if(enable_profiler)
+    {
+        ROS_INFO_NAMED("laser_mapping", "Running easy profiler");
+        EASY_PROFILER_ENABLE;
+    }
+
     bool publish_timing, publish_delay;
     nh.param("/debug_timing", publish_timing, false);
     nh.param("/debug_delay", publish_delay, false);
@@ -914,6 +927,7 @@ int main(int argc, char** argv)
     bool status = ros::ok();
     while (status)
     {
+        EASY_BLOCK("Main Loop")
         if (flg_exit) break;
         ros::spinOnce();
         if (!lidar_odom_) {rate.sleep(); continue;};
@@ -1008,6 +1022,7 @@ int main(int argc, char** argv)
             t2 = omp_get_wtime();
 
             /*** iterated state estimation ***/
+            EASY_BLOCK("Iterated state estimation");
             double t_update_start = omp_get_wtime();
             double solve_H_time = 0;
             kf.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
@@ -1018,6 +1033,7 @@ int main(int argc, char** argv)
             geoQuat.y = state_point.rot.coeffs()[1];
             geoQuat.z = state_point.rot.coeffs()[2];
             geoQuat.w = state_point.rot.coeffs()[3];
+            EASY_END_BLOCK;
 
             double t_update_end = omp_get_wtime();
 
@@ -1131,6 +1147,13 @@ int main(int argc, char** argv)
             s_vec5.push_back(s_plot[i]);
         }
         fclose(fp2);
+    }
+
+    if(enable_profiler)
+    {
+        const auto prof_dir = std::string(getenv("HOME")) + "/fast_lio_profile.prof";
+        auto blocks_written = profiler::dumpBlocksToFile(prof_dir.c_str());
+        std::cout << "Easy profiler blocks written: " << blocks_written << "\n";
     }
 
     return 0;

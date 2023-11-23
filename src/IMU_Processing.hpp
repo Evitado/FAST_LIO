@@ -24,6 +24,8 @@
 #include <geometry_msgs/Vector3.h>
 #include "use-ikfom.hpp"
 
+#include<easy/profiler.h>
+
 /// *************Preconfiguration
 
 #define MAX_INI_COUNT (10)
@@ -336,6 +338,7 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
 
 void ImuProcess::Process(const MeasureGroup &meas,  esekfom::esekf<state_ikfom, 12, input_ikfom> &kf_state, PointCloudXYZI::Ptr cur_pcl_un_)
 {
+  EASY_BLOCK("ProcessIMU", profiler::colors::Green);
   double t1,t2,t3;
   t1 = omp_get_wtime();
 
