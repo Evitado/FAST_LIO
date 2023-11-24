@@ -1151,7 +1151,9 @@ int main(int argc, char** argv)
 
     if(enable_profiler)
     {
-        const auto prof_dir = std::string(getenv("HOME")) + "/fast_lio_profile.prof";
+        std::stringstream ss;
+        ss << std::fixed << std::setprecision(0) << ros::Time::now().toSec();
+        const auto prof_dir = std::string(getenv("HOME")) + "/profiler/fast_lio_profile_"  + ss.str() + ".prof";
         auto blocks_written = profiler::dumpBlocksToFile(prof_dir.c_str());
         std::cout << "Easy profiler blocks written: " << blocks_written << "\n";
     }
