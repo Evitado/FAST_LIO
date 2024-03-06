@@ -101,8 +101,6 @@ bool   point_selected_surf[100000] = {0};
 bool   lidar_pushed, flg_first_scan = true, flg_exit = false, flg_EKF_inited;
 bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
 bool   lidar_odom_;
-bool   start_mapping_once_ready_;
-int    broadcast_counter_;
 
 vector<vector<int>>  pointSearchInd_surf;
 vector<BoxPointType> cub_needrm;
@@ -153,10 +151,6 @@ tf::TransformListener *listener;
 std::string base_link_frame;
 std::string lidar_frame;
 std::string global_frame;
-
-// mapping service clients
-ros::ServiceClient mapping_stop_cli_;
-ros::ServiceClient mapping_start_cli_;
 
 void SigHandle(int sig)
 {
@@ -580,7 +574,7 @@ void set_posestamp(T & out)
     out.pose.orientation.w = geoQuat.w;
 }
 
-bool publish_odometry(const ros::Publisher & pubOdomAftMapped)
+void publish_odometry(const ros::Publisher & pubOdomAftMapped)
 {
     odomAftMapped.header.frame_id = global_frame;
     odomAftMapped.child_frame_id = base_link_frame;
@@ -623,9 +617,7 @@ bool publish_odometry(const ros::Publisher & pubOdomAftMapped)
     }
     catch (tf::TransformException ex){
       ROS_ERROR("%s",ex.what());
-      return false;
     }
-    return true;
 }
 
 void publish_path(const ros::Publisher pubPath)
@@ -637,7 +629,7 @@ void publish_path(const ros::Publisher pubPath)
     /*** if path is too large, the rvis will crash ***/
     static int jjj = 0;
     jjj++;
-    if (jjj % 10 == 0) 
+    if (jjj % 10 == 0)
     {
         path.poses.push_back(msg_body_pose);
         pubPath.publish(path);
@@ -765,21 +757,12 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
 bool startLIO(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
 {
   lidar_odom_ = true;
-
-  // mapping needs to have the first odom transform published for keyframing to work
-  broadcast_counter_        = 0;
-  start_mapping_once_ready_ = true;
   return true;
 }
 
 bool stopLIO(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
 {
   // TODO: clear current state
-
-  std_srvs::Empty stop_map_trigger;
-  if (!mapping_stop_cli_.call(stop_map_trigger))
-    ROS_ERROR("Unable to stop mapping.");
-
   lidar_odom_ = false;
   return true;
 }
@@ -907,17 +890,6 @@ int main(int argc, char** argv)
     ros::Publisher timing_pub       = nh.advertise<std_msgs::Float64>("/debug/lio_timing", 1);
     ros::Publisher delay_pub        = nh.advertise<std_msgs::Float64>("/debug/lio_delay", 1);
 
-    // Mapping services
-    broadcast_counter_        = 0;
-    start_mapping_once_ready_ = false;
-    mapping_start_cli_        = nh.serviceClient<evitado_msgs::Trigger>("ohm_mapping/start_mapping");
-    mapping_stop_cli_         = nh.serviceClient<std_srvs::Empty>("ohm_mapping/stop_mapping");
-
-    ROS_INFO("Waiting for mapping services to come up...");
-    mapping_start_cli_.waitForExistence();
-    mapping_stop_cli_.waitForExistence();
-    ROS_INFO("Mapping services available");
-
     ros::ServiceServer start_lio_service_ = pn.advertiseService("start_lidar_odom", startLIO);
     ros::ServiceServer stop_lio_service_ = pn.advertiseService("stop_lidar_odom", stopLIO);
 
@@ -1038,19 +1010,7 @@ int main(int argc, char** argv)
             double t_update_end = omp_get_wtime();
 
             /******* Publish odometry *******/
-            if(publish_odometry(pubOdomAftMapped))
-              broadcast_counter_++;
-
-            // We probably don't need the counter anymore
-            if(start_mapping_once_ready_ && broadcast_counter_ > 5)
-            {
-              evitado_msgs::Trigger srv;
-              srv.request.aircraft_changed = true;
-              if (!mapping_start_cli_.call(srv))
-                ROS_WARN("Unable to start mapping.");
-
-              start_mapping_once_ready_ = false;
-            }
+            publish_odometry(pubOdomAftMapped);
 
             /*** add the feature points to map kdtree ***/
             t3 = omp_get_wtime();
