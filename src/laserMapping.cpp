@@ -33,6 +33,7 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 #include <omp.h>
+#include <memory>
 #include <mutex>
 #include <math.h>
 #include <thread>
@@ -290,6 +291,7 @@ void lasermap_fov_segment()
 //              it seems to mess with the registration
 void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {
+    //TODO: this need to be chnaged
     if (!lidar_odom_)
       return;
 
@@ -452,6 +454,7 @@ void map_incremental()
     double st_time = omp_get_wtime();
     add_point_size = ikdtree.Add_Points(PointToAdd, true);
     ikdtree.Add_Points(PointNoNeedDownsample, false); 
+    //TODO: ikdtree.Root_Node->tree_deleted = true;
     add_point_size = PointToAdd.size() + PointNoNeedDownsample.size();
     kdtree_incremental_time = omp_get_wtime() - st_time;
 }
@@ -749,6 +752,20 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
     solve_time += omp_get_wtime() - solve_start_;
 }
 
+void reset(const shared_ptr<ImuProcess>& p_imu)
+{
+  //cleared map
+  PointVector ().swap(ikdtree.PCL_Storage);
+  ikdtree.flatten(ikdtree.Root_Node, ikdtree.PCL_Storage, NOT_RECORD);
+  auto delete_all_points = ikdtree.PCL_Storage;
+  ikdtree.Delete_Points(delete_all_points);
+  ROS_WARN("The size of ikdtree after delete is %d", ikdtree.size());
+  flg_first_scan = true;
+  p_imu->Reset();
+  pcl_wait_save->clear();
+  //clear poses
+}
+
 bool startLIO(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
 {
   lidar_odom_ = true;
@@ -824,7 +841,7 @@ int main(int argc, char** argv)
     FOV_DEG = (fov_deg + 10.0) > 179.9 ? 179.9 : (fov_deg + 10.0);
     HALF_FOV_COS = cos((FOV_DEG) * 0.5 * PI_M / 180.0);
 
-    _featsArray.reset(new PointCloudXYZI());
+    // _featsArray.reset(new PointCloudXYZI());
 
     memset(point_selected_surf, true, sizeof(point_selected_surf));
     memset(res_last, -1000.0f, sizeof(res_last));
@@ -846,6 +863,7 @@ int main(int argc, char** argv)
     kf.init_dyn_share(get_f, df_dx, df_dw, h_share_model, NUM_MAX_ITERATIONS, epsi);
 
     /*** debug record ***/
+    //TODO: remove the debug shit
     FILE *fp;
     string pos_log_dir = root_dir + "/Log/pos_log.txt";
     fp = fopen(pos_log_dir.c_str(),"w");
@@ -860,6 +878,7 @@ int main(int argc, char** argv)
         cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
 
     /*** ROS subscribe initialization ***/
+    //TODO: main shit happend here 
     ros::Subscriber sub_pcl = nh.subscribe(lid_topic, 1, standard_pcl_cbk);
     ros::Subscriber sub_imu = nh.subscribe(imu_topic, 1, imu_cbk);
     ros::Publisher pubLaserCloudFull = nh.advertise<sensor_msgs::PointCloud2>
@@ -888,8 +907,9 @@ int main(int argc, char** argv)
     {
         if (flg_exit) break;
         ros::spinOnce();
+        //TODO this is not good
         if (!lidar_odom_) {rate.sleep(); continue;};
-
+        //TODO remove this time madness
         auto t1_ = std::chrono::high_resolution_clock::now();
         if(sync_packages(Measures))
         {
@@ -928,6 +948,7 @@ int main(int argc, char** argv)
             /*** downsample the feature points in a scan ***/
             downSizeFilterSurf.setInputCloud(feats_undistort);
             downSizeFilterSurf.filter(*feats_down_body);
+            //TODO: most important for fail state
             t1 = omp_get_wtime();
             feats_down_size = feats_down_body->points.size();
             /*** initialize the map kdtree ***/
@@ -961,8 +982,8 @@ int main(int argc, char** argv)
             feats_down_world->resize(feats_down_size);
 
             V3D ext_euler = SO3ToEuler(state_point.offset_R_L_I);
-            fout_pre<<setw(20)<<Measures.lidar_beg_time - first_lidar_time<<" "<<euler_cur.transpose()<<" "<< state_point.pos.transpose()<<" "<<ext_euler.transpose() << " "<<state_point.offset_T_L_I.transpose()<< " " << state_point.vel.transpose() \
-            <<" "<<state_point.bg.transpose()<<" "<<state_point.ba.transpose()<<" "<<state_point.grav<< endl;
+            // fout_pre<<setw(20)<<Measures.lidar_beg_time - first_lidar_time<<" "<<euler_cur.transpose()<<" "<< state_point.pos.transpose()<<" "<<ext_euler.transpose() << " "<<state_point.offset_T_L_I.transpose()<< " " << state_point.vel.transpose() \
+            // <<" "<<state_point.bg.transpose()<<" "<<state_point.ba.transpose()<<" "<<state_point.grav<< endl;
 
             if(0) // If you need to see map point, change to "if(1)"
             {
