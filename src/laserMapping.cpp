@@ -600,8 +600,6 @@ void publish_odometry(const ros::Publisher & pubOdomAftMapped)
         odomAftMapped.header.frame_id = global_frame;
         odomAftMapped.child_frame_id = base_link_frame;
         odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time);
-        odomAftMapped.header.frame_id = global_frame;
-        odomAftMapped.child_frame_id = base_link_frame;
         odomAftMapped.pose.pose.orientation.x = 0;
         odomAftMapped.pose.pose.orientation.y = 0;
         odomAftMapped.pose.pose.orientation.z = 0;
@@ -798,7 +796,6 @@ void reset()
   ikdtree.flatten(ikdtree.Root_Node, ikdtree.PCL_Storage, NOT_RECORD);
   auto delete_all_points = ikdtree.PCL_Storage;
   ikdtree.Delete_Points(delete_all_points);
-  ROS_WARN("The size of ikdtree after delete is %d", ikdtree.size());
   flg_first_scan = true;
   path.poses.clear(); 
   p_imu->Reset();
